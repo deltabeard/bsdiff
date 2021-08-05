@@ -66,11 +66,11 @@ int bspatch(const uint8_t* old, int64_t oldsize, uint8_t* new, int64_t newsize, 
 		if (ctrl[0]<0 || ctrl[0]>INT_MAX ||
 			ctrl[1]<0 || ctrl[1]>INT_MAX ||
 			newpos+ctrl[0]>newsize)
-			return -1;
+			return -2;
 
 		/* Read diff string */
 		if (stream->read(stream, new + newpos, ctrl[0]))
-			return -1;
+			return -3;
 
 		/* Add old data to diff string */
 		for(i=0;i<ctrl[0];i++)
@@ -83,11 +83,11 @@ int bspatch(const uint8_t* old, int64_t oldsize, uint8_t* new, int64_t newsize, 
 
 		/* Sanity-check */
 		if(newpos+ctrl[1]>newsize)
-			return -1;
+			return -4;
 
 		/* Read extra string */
 		if (stream->read(stream, new + newpos, ctrl[1]))
-			return -1;
+			return -5;
 
 		/* Adjust pointers */
 		newpos+=ctrl[1];
@@ -99,7 +99,7 @@ int bspatch(const uint8_t* old, int64_t oldsize, uint8_t* new, int64_t newsize, 
 
 #if defined(BSPATCH_EXECUTABLE)
 
-#include <bzlib.h>
+//#include <bzlib.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -109,52 +109,66 @@ int bspatch(const uint8_t* old, int64_t oldsize, uint8_t* new, int64_t newsize, 
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <assert.h>
 
-static int bz2_read(const struct bspatch_stream* stream, void* buffer, int length)
+//static int bz2_read(const struct bspatch_stream* stream, void* buffer, int length)
+//{
+//	int n;
+//	int bz2err;
+//	BZFILE* bz2;
+//
+//	bz2 = (BZFILE*)stream->opaque;
+//	n = BZ2_bzRead(&bz2err, bz2, buffer, length);
+//	if (n != length)
+//		return -1;
+//
+//	return 0;
+//}
+
+static int file_read(const struct bspatch_stream* stream, void* buffer, int length)
 {
-	int n;
-	int bz2err;
-	BZFILE* bz2;
-
-	bz2 = (BZFILE*)stream->opaque;
-	n = BZ2_bzRead(&bz2err, bz2, buffer, length);
-	if (n != length)
-		return -1;
-
-	return 0;
+    int diff_fd = *(int*)stream->opaque;
+    int ret = read(diff_fd, buffer, length);
+    assert(ret == length);
+    return 0;
 }
 
 int main(int argc,char * argv[])
 {
-	FILE * f;
+	//FILE * f;
 	int fd;
-	int bz2err;
-	uint8_t header[24];
+	//int bz2err;
+	//uint8_t header[24];
 	uint8_t *old, *new;
 	int64_t oldsize, newsize;
-	BZFILE* bz2;
+	//BZFILE* bz2;
 	struct bspatch_stream stream;
 	struct stat sb;
 
 	if(argc!=4) errx(1,"usage: %s oldfile newfile patchfile\n",argv[0]);
 
-	/* Open patch file */
-	if ((f = fopen(argv[3], "r")) == NULL)
-		err(1, "fopen(%s)", argv[3]);
+    int diff_fd = open(argv[3], O_RDONLY);
+	uint8_t buf[8];
+	read(diff_fd, buf, sizeof(buf));
+	newsize=offtin(buf);
 
-	/* Read header */
-	if (fread(header, 1, 24, f) != 24) {
-		if (feof(f))
-			errx(1, "Corrupt patch\n");
-		err(1, "fread(%s)", argv[3]);
-	}
+//	/* Open patch file */
+//	if ((f = fopen(argv[3], "r")) == NULL)
+//		err(1, "fopen(%s)", argv[3]);
 
-	/* Check for appropriate magic */
-	if (memcmp(header, "ENDSLEY/BSDIFF43", 16) != 0)
-		errx(1, "Corrupt patch\n");
+//	/* Read header */
+//	if (fread(header, 1, 24, f) != 24) {
+//		if (feof(f))
+//			errx(1, "Corrupt patch\n");
+//		err(1, "fread(%s)", argv[3]);
+//	}
+//
+//	/* Check for appropriate magic */
+//	if (memcmp(header, "ENDSLEY/BSDIFF43", 16) != 0)
+//		errx(1, "Corrupt patch\n");
 
 	/* Read lengths from header */
-	newsize=offtin(header+16);
+	//newsize=offtin(header+16);
 	if(newsize<0)
 		errx(1,"Corrupt patch\n");
 
@@ -168,17 +182,22 @@ int main(int argc,char * argv[])
 		(close(fd)==-1)) err(1,"%s",argv[1]);
 	if((new=malloc(newsize+1))==NULL) err(1,NULL);
 
-	if (NULL == (bz2 = BZ2_bzReadOpen(&bz2err, f, 0, 0, NULL, 0)))
-		errx(1, "BZ2_bzReadOpen, bz2err=%d", bz2err);
+	//if (NULL == (bz2 = BZ2_bzReadOpen(&bz2err, f, 0, 0, NULL, 0)))
+	//	errx(1, "BZ2_bzReadOpen, bz2err=%d", bz2err);
 
-	stream.read = bz2_read;
-	stream.opaque = bz2;
-	if (bspatch(old, oldsize, new, newsize, &stream))
-		errx(1, "bspatch");
+	//stream.read = bz2_read;
+	//stream.opaque = bz2;
+	stream.read = file_read;
+	stream.opaque = &diff_fd;
+    int ret = bspatch(old, oldsize, new, newsize, &stream);
+    if (0 != ret){
+		errx(ret, "bspatch %d oldsize %ld newsize %ld ", ret, oldsize, newsize);
+    }
 
 	/* Clean up the bzip2 reads */
-	BZ2_bzReadClose(&bz2err, bz2);
-	fclose(f);
+	//BZ2_bzReadClose(&bz2err, bz2);
+	//fclose(f);
+    close(diff_fd);
 
 	/* Write the new file */
 	if(((fd=open(argv[2],O_CREAT|O_TRUNC|O_WRONLY,sb.st_mode))<0) ||
