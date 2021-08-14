@@ -47,16 +47,7 @@ AirMech <https://www.carbongames.com> and the following requirements:
 
 Compiling
 ---------
-The libraries should compile warning free in any moderately recent version of
-gcc. The project uses `<stdint.h>` which is technically a C99 file and not
-available in Microsoft Visual Studio. The easiest solution here is to use the
-msinttypes version of stdint.h from <https://code.google.com/p/msinttypes/>.
-The direct link for the lazy people is:
-<https://msinttypes.googlecode.com/svn/trunk/stdint.h>.
-
-If your compiler does not provide an implementation of `<stdint.h>` you can
-remove the header from the bsdiff/bspatch files and provide your own typedefs
-for the following symbols: `uint8_t`, `uint64_t` and `int64_t`.
+You may use either CMake or Make to build the example.
 
 Examples
 --------
